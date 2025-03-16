@@ -1,0 +1,56 @@
+[gd_scene load_steps=7 format=3 uid="uid://cfkqysbw2s1qi"]
+
+[ext_resource type="Script" uid="uid://dh2x4a5ak372p" path="res://main.gd" id="1_ig7tw"]
+[ext_resource type="Script" uid="uid://5t0iydd7nnuu" path="res://camera_3d.gd" id="2_0xm2m"]
+[ext_resource type="Script" uid="uid://cks124dctd3un" path="res://debug.gd" id="3_h2yge"]
+
+[sub_resource type="Environment" id="Environment_ig7tw"]
+background_mode = 1
+tonemap_mode = 3
+ssao_enabled = true
+sdfgi_enabled = true
+glow_enabled = true
+glow_normalized = true
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_1bvp3"]
+shading_mode = 0
+
+[sub_resource type="BoxMesh" id="BoxMesh_lquwl"]
+material = SubResource("StandardMaterial3D_1bvp3")
+
+[node name="Main" type="Node"]
+script = ExtResource("1_ig7tw")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_ig7tw")
+
+[node name="Node3D" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 2.98321)
+script = ExtResource("2_0xm2m")
+
+[node name="Camera3D" type="Camera3D" parent="Node3D"]
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.801557, 0, -0.597919, 0.343533, 0.818471, 0.460533, 0.489379, -0.574548, 0.656051, -2.44259, 3.36778, 4.15716)
+shadow_enabled = true
+sky_mode = 1
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="DirectionalLight3D"]
+mesh = SubResource("BoxMesh_lquwl")
+
+[node name="HUD" type="CanvasLayer" parent="."]
+
+[node name="Label" type="Label" parent="HUD"]
+top_level = true
+offset_right = 40.0
+offset_bottom = 23.0
+script = ExtResource("3_h2yge")
+
+[node name="Panel" type="Panel" parent="HUD/Label"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
