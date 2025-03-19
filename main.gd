@@ -1,28 +1,43 @@
 extends Node
 
-# We do a little bit of data oriented design :)
-const size : Vector3i = Vector3i(3,3,3)
-const chunk_count = size.x * size.y * size.z
-var world_data : PackedByteArray = []
-# TODO redo the world pos to use an int type or bytes instead since floats don't make sense for a grid
-var world_pos : PackedVector3Array = []
+class physics_object:
+	# These will all be 64 bit floating point numbers to hopefully avoid some precision issues
+	var pos_x : float = 0
+	var pos_y : float = 0
+	var pos_z : float = 0
+	
+	var rot : Quaternion = Quaternion.IDENTITY
+	
+	var size : Vector3i = Vector3i.ZERO
+	var data : PackedByteArray = []
+	# Stores the position and lod of the desired chunk Vector3i + LOD value
+	var chunk_pos : PackedInt32Array = []
+	
+	func _init() ->void:
+		pass
+	
+	func get_chunk_data_size() -> int:
+		return size.x*size.y*size.z
+	
+
+# Thread pool for generating chunk meshes
+var thread_pool : Array[Thread] = []
+
+# For now chunk data is processed on the main thread and will remain there
+
+# another name for seed
 var iv : int = randi()
 
+# Maybe have a maximum number of meshes?
 var mesh_pool : Array[MeshInstance3D] = []
 
 #KSP strat for avoiding floating point precision issues
 var world_offset : Vector3 = Vector3.ZERO
 
-class physics_body:
-	var basis : Basis
-	var chunk_data : PackedByteArray = []
-	var chunk_pos : PackedVector3Array = []
-	# These will all be 64 bit floating point numbers to hopefully avoid some precision issues
-	var pos_x : float
-	var pos_y : float
-	var pos_z : float
+var objects : Array[physics_object] = []
 
-const SHADER = preload("res://chunk_0.gdshader")
+# how close does the player need to be in order for the chunk to be rendered at full detail
+const render_distance : int = 2
 
 # TODO for performance make the main thread demand chunk generation and chunk mesh generation, 
 # but do these operations on seperate threads as to ensure stable performance on the main thread
@@ -31,15 +46,23 @@ const SHADER = preload("res://chunk_0.gdshader")
 func _init() -> void:
 	Engine.max_fps = 0
 	
+	var earth : physics_object = physics_object.new()
+	earth.size = Vector3(1, 1, 1)
+	
 	# terrain generation
-	for i in size.x:
-		for j in size.y:
-			for k in size.z:
+	for i in earth.size.x:
+		for j in earth.size.y:
+			for k in earth.size.z:
 				var start_time = Time.get_unix_time_from_system()
 				print(i+j+k, " ", Vector3(i, j, k))
-				world_data.append_array(generate_chunk_data(Vector3i(i, j, k), iv))
-				world_pos.append(Vector3(i, j, k))
+				earth.data.append_array(generate_chunk_data(Vector3i(i, j, k), iv))
+				earth.chunk_pos.append(i)
+				earth.chunk_pos.append(j)
+				earth.chunk_pos.append(k)
+				earth.chunk_pos.append(0)
 				print("chunk generation time: ", (Time.get_unix_time_from_system() - start_time) * 1000, "ms")
+	
+	objects.append(earth)
 
 func _ready() -> void:
 	var block_atlas : ImageTexture = generate_block_texture_atlas()
@@ -50,29 +73,37 @@ func _ready() -> void:
 	#material.shader = SHADER
 	#material.set_shader_parameter("block_atlas", block_atlas)
 	
-	mesh_pool.resize(chunk_count)
+	# TODO add support for rendering multiple objects
+	mesh_pool.resize(objects[0].get_chunk_data_size())
 	
+	# TODO add check for whether pos is even visible
+	# TODO do testing to see if raymarched planets makes sense after a certain distance so that they can be visible at all times (should be very performant since they will cover very few pixels before we switch to rasterization)
+	# Raymarched night sky??!?
 	# create all mesh instances needed
-	for i in range(chunk_count):
+	for i in range(mesh_pool.size()):
 		var instance = MeshInstance3D.new()
-		instance.position = world_pos[i]*32
+		instance.position.x = objects[0].pos_x*32
+		instance.position.y = objects[0].pos_y*32
+		instance.position.z = objects[0].pos_z*32
+		#instance.rotation_edit_mode = Node3D.ROTATION_EDIT_MODE_QUATERNION
+		#instance.rotation = objects[0].rot
 		mesh_pool[i] = instance
 	
 	# generate the meshes
-	for i in range(chunk_count):
-		var chunk_data = world_data.slice(32768*i,32768*(i+1))
+	for i in range(objects[0].get_chunk_data_size()):
+		var chunk_data = objects[0].data.slice(32768*i,32768*(i+1))
 		
 		var start_time = Time.get_unix_time_from_system()
-		#var mesh = generate_chunk_mesh_naive_optimized(chunk_data)
-		var mesh = generate_lod_chunk_mesh_naive()
+		var mesh = generate_chunk_mesh_naive_optimized(chunk_data)
+		#var mesh = generate_lod_chunk_mesh_naive()
 		print("mesh generation time: ", (Time.get_unix_time_from_system() - start_time) * 1000, "ms")
 		
 		mesh_pool[i].mesh = mesh
 	
 	# add all the mesh instances
-	for i in range(chunk_count):
-		mesh_pool[i].set_surface_override_material(0, material)
-		add_child(mesh_pool[i])
+	for mesh in mesh_pool:
+		mesh.set_surface_override_material(0, material)
+		add_child(mesh)
 	
 
 var w : bool = false
@@ -144,12 +175,14 @@ func _process(delta) -> void:
 	if shift:
 		world_offset += Vector3(0,1,0) * delta * move_speed
 	
-	for i in range(mesh_pool.size()):
+	for i in range(objects[0].get_chunk_data_size()):
 		# emulates player movement
-		mesh_pool[i].position = world_offset + world_pos[i]*32
+		mesh_pool[i].position.x = world_offset.x + objects[0].pos_x*32
+		mesh_pool[i].position.y = world_offset.y + objects[0].pos_y*32
+		mesh_pool[i].position.z = world_offset.z + objects[0].pos_z*32
 
 # pass a PackedByteArray of size 32768 (16**3)
-func generate_chunk_mesh_naive(chunk_data : PackedByteArray) -> Mesh:
+static func generate_chunk_mesh_naive(chunk_data : PackedByteArray) -> Mesh:
 	var result = ArrayMesh.new()
 	
 	var vertices = []
@@ -295,7 +328,7 @@ func generate_chunk_mesh_naive(chunk_data : PackedByteArray) -> Mesh:
 	return result
 
 # pass a PackedByteArray of size 32768 (16**3)
-func generate_chunk_mesh_naive_optimized(chunk_data : PackedByteArray) -> Mesh:
+static func generate_chunk_mesh_naive_optimized(chunk_data : PackedByteArray) -> Mesh:
 	var start_time = Time.get_unix_time_from_system()
 	
 	var result = ArrayMesh.new()
@@ -404,7 +437,7 @@ func generate_chunk_mesh_naive_optimized(chunk_data : PackedByteArray) -> Mesh:
 	return result
 
 # pass a PackedByteArray of size 32768 (16**3)
-func generate_lod_chunk_mesh_naive() -> Mesh:
+static func generate_lod_chunk_mesh_naive() -> Mesh:
 	const scale : float = 32.0;
 	var result = ArrayMesh.new()
 	
@@ -488,7 +521,7 @@ func generate_lod_chunk_mesh_naive() -> Mesh:
 	
 	return result
 
-func generate_chunk_data(_pos: Vector3i, _seed : int) -> PackedByteArray:
+static func generate_chunk_data(_pos: Vector3i, _seed : int) -> PackedByteArray:
 	var result : PackedByteArray
 	
 	for i in range(32*32*32):
@@ -496,7 +529,7 @@ func generate_chunk_data(_pos: Vector3i, _seed : int) -> PackedByteArray:
 	
 	return result
 
-func generate_chunk_bitmask(chunk_data : PackedByteArray) -> PackedByteArray:
+static func generate_chunk_bitmask(chunk_data : PackedByteArray) -> PackedByteArray:
 	var result : PackedByteArray
 	
 	for i in range(32*32*32/8):

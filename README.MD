@@ -1,6 +1,9 @@
 
 space voxel proof of concept
 
+GOAL:
+Make an engine capable of rendering an object 83,460,000,000,000^3 meters in size
+
 Engine:
 
 *- Reimplement existing codebase in zig
