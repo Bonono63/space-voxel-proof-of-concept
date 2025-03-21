@@ -31,6 +31,7 @@ script = ExtResource("2_0xm2m")
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
 transform = Transform3D(0.801557, 0, -0.597919, 0.343533, 0.818471, 0.460533, 0.489379, -0.574548, 0.656051, -2.44259, 3.36778, 4.15716)
+shadow_enabled = true
 sky_mode = 1
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="DirectionalLight3D"]
