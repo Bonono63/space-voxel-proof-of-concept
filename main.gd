@@ -47,13 +47,13 @@ func _init() -> void:
 	Engine.max_fps = 0
 	
 	var earth : physics_object = physics_object.new()
-	earth.size = Vector3(10, 10, 10)
+	earth.size = Vector3(3, 3, 3)
 	
 	var start_time = Time.get_unix_time_from_system()
 	
 	# terrain generation
 	for i in earth.get_chunk_data_size():
-		earth.data.append_array(generate_chunk_data())
+		#earth.data.append_array(generate_chunk_data())
 		earth.chunk_pos.append(i % earth.size.x)
 		earth.chunk_pos.append(i / earth.size.x % earth.size.y)
 		earth.chunk_pos.append(i / earth.size.x / earth.size.y % earth.size.z)
@@ -64,46 +64,29 @@ func _init() -> void:
 	
 	objects.append(earth)
 
+const RENDER_DISTANCE = 2
+
+var MATERIAL = StandardMaterial3D.new()
+
 func _ready() -> void:
 	var block_atlas : ImageTexture = generate_block_texture_atlas()
 	
-	var material = StandardMaterial3D.new() #ShaderMaterial.new()
-	material.albedo_texture = block_atlas
-	material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	MATERIAL.albedo_texture = block_atlas
+	MATERIAL.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	
 	#material.shader = SHADER
 	#material.set_shader_parameter("block_atlas", block_atlas)
 	
 	# TODO add support for rendering multiple objects
-	mesh_pool.resize(objects[0].get_chunk_data_size())
+	mesh_pool.resize(RENDER_DISTANCE**3)
 	
-	print("chunk data size: ", objects[0].get_chunk_data_size())
-	print("mesh pool size: ", mesh_pool.size())
+	for j in mesh_pool.size():
+		var instance = MeshInstance3D.new()
+		mesh_pool[j] = instance
 	
 	# TODO add check for whether pos is even visible
 	# TODO do testing to see if raymarched planets makes sense after a certain distance so that they can be visible at all times (should be very performant since they will cover very few pixels before we switch to rasterization)
 	# Raymarched night sky??!?
-	# create all mesh instances needed
-	
-	for i in mesh_pool.size():
-		var instance = MeshInstance3D.new()
-		#instance.position.x = objects[0].pos_x*32
-		#instance.position.y = objects[0].pos_y*32
-		#instance.position.z = objects[0].pos_z*32
-		#instance.rotation_edit_mode = Node3D.ROTATION_EDIT_MODE_QUATERNION
-		#instance.rotation = objects[0].rot
-		mesh_pool[i] = instance
-		
-		var chunk_data = objects[0].data.slice(32768*i,32768*(i+1))
-		
-		#var start_time = Time.get_unix_time_from_system()
-		#var mesh = generate_lod_chunk_mesh_naive()
-		var mesh = Meshers.generate_chunk_mesh_simple_optimized(chunk_data)
-		#print("mesh generation time: ", (Time.get_unix_time_from_system() - start_time) * 1000, "ms")
-		
-		mesh_pool[i].mesh = mesh
-		
-		mesh_pool[i].set_surface_override_material(0, material)
-		add_child(mesh_pool[i])
 
 var w : bool = false
 var a : bool = false
@@ -186,48 +169,30 @@ func _process(delta) -> void:
 	$HUD/Label.text = str("fps: ", Engine.get_frames_per_second(), " delta: ", 
 	delta, "\ncam rot: ", $Node3D/Camera3D.rotation.x, " ", $Node3D.rotation.y,
 	"\npos: ", world_offset)
+	
+	# Find the chunks in range of the player
+	
+	for object in objects:
+		
+		var chunk_data = generate_chunk_data()#objects[0].data.slice(32768*i,32768*(i+1))
+		
+		#var start_time = Time.get_unix_time_from_system()
+		#var mesh = generate_lod_chunk_mesh_naive()
+		var mesh = Meshers.generate_chunk_mesh_simple_optimized(chunk_data)
+		#print("mesh generation time: ", (Time.get_unix_time_from_system() - start_time) * 1000, "ms")
+		
+		mesh_pool[j].mesh = mesh
+		
+		mesh_pool[j].set_surface_override_material(0, MATERIAL)
+		add_child(mesh_pool[j])
 
 #_pos: Vector3i, _seed : int
-static func generate_chunk_data() -> PackedByteArray:
+static func generate_chunk_data(chunk_pos : Vector3i, iv : int) -> PackedByteArray:
 	var result : PackedByteArray
 	
+	seed(iv + chunk_pos.x + chunk_pos.y + chunk_pos.z)
 	for i in range(32*32*32):
 		result.append(randi_range(0,1))
-	
-	return result
-
-static func generate_chunk_bitmask(chunk_data : PackedByteArray) -> PackedByteArray:
-	var result : PackedByteArray
-	
-	for i in range(32*32*32/8):
-		var a = 0
-		if (chunk_data.decode_u8(i) == 1):
-			a |= 1
-		a = a << 1
-		if (chunk_data.decode_u8(i+1) == 1):
-			a |= 1
-		a = a << 1
-		if (chunk_data.decode_u8(i+2) == 1):
-			a |= 1
-		a = a << 1
-		if (chunk_data.decode_u8(i+3) == 1):
-			a |= 1
-		a = a << 1
-		if (chunk_data.decode_u8(i+4) == 1):
-			a |= 1
-		a = a << 1
-		if (chunk_data.decode_u8(i+5) == 1):
-			a |= 1
-		a = a << 1
-		if (chunk_data.decode_u8(i+6) == 1):
-			a |= 1
-		a = a << 1
-		if (chunk_data.decode_u8(i+7) == 1):
-			a |= 1
-		a = a << 1
-		
-		result.append(a)
-		print(String.num_int64(a, 2))
 	
 	return result
 

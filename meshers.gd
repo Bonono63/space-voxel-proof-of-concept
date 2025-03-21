@@ -558,3 +558,39 @@ static func generate_lod_chunk_mesh_naive() -> Mesh:
 	result.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, data)
 	
 	return result
+
+
+static func generate_chunk_bitmask(chunk_data : PackedByteArray) -> PackedByteArray:
+	var result : PackedByteArray
+	
+	for i in range(32*32*32/8):
+		var a = 0
+		if (chunk_data.decode_u8(i) == 1):
+			a |= 1
+		a = a << 1
+		if (chunk_data.decode_u8(i+1) == 1):
+			a |= 1
+		a = a << 1
+		if (chunk_data.decode_u8(i+2) == 1):
+			a |= 1
+		a = a << 1
+		if (chunk_data.decode_u8(i+3) == 1):
+			a |= 1
+		a = a << 1
+		if (chunk_data.decode_u8(i+4) == 1):
+			a |= 1
+		a = a << 1
+		if (chunk_data.decode_u8(i+5) == 1):
+			a |= 1
+		a = a << 1
+		if (chunk_data.decode_u8(i+6) == 1):
+			a |= 1
+		a = a << 1
+		if (chunk_data.decode_u8(i+7) == 1):
+			a |= 1
+		a = a << 1
+		
+		result.append(a)
+		print(String.num_int64(a, 2))
+	
+	return result
