@@ -28,8 +28,13 @@ var thread_pool : Array[Thread] = []
 # another name for seed
 var iv : int = randi()
 
+class potato:
+	var object_index : int
+	var chunk_index : int
+	var mesh : MeshInstance3D
+
 # Maybe have a maximum number of meshes?
-var mesh_pool : Array[MeshInstance3D] = []
+var mesh_pool : Array[potato] = []
 
 #KSP strat for avoiding floating point precision issues
 var world_offset : Vector3 = Vector3(1,-2,1)
@@ -80,9 +85,9 @@ func _ready() -> void:
 	# TODO add support for rendering multiple objects
 	mesh_pool.resize(RENDER_DISTANCE**3)
 	
-	for j in mesh_pool.size():
-		var instance = MeshInstance3D.new()
-		mesh_pool[j] = instance
+	#for j in mesh_pool.size():
+	#	var instance = MeshInstance3D.new()
+	#	mesh_pool[j] = instance
 	
 	# TODO add check for whether pos is even visible
 	# TODO do testing to see if raymarched planets makes sense after a certain distance so that they can be visible at all times (should be very performant since they will cover very few pixels before we switch to rasterization)
@@ -131,6 +136,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.keycode == KEY_CTRL and not event.pressed:
 			control = false
 
+
+
 func _process(delta) -> void:
 	var move_speed : float = 5.0
 	var look_vector : Vector3 = Vector3(-sin($Node3D.rotation.y), sin($Node3D/Camera3D.rotation.x), -cos($Node3D.rotation.y))#sin(rotation.y))
@@ -172,25 +179,40 @@ func _process(delta) -> void:
 	
 	# Find the chunks in range of the player
 	
+	i = 0
 	for object in objects:
-		
-		var chunk_data = generate_chunk_data()#objects[0].data.slice(32768*i,32768*(i+1))
-		
-		#var start_time = Time.get_unix_time_from_system()
-		#var mesh = generate_lod_chunk_mesh_naive()
-		var mesh = Meshers.generate_chunk_mesh_simple_optimized(chunk_data)
-		#print("mesh generation time: ", (Time.get_unix_time_from_system() - start_time) * 1000, "ms")
-		
-		mesh_pool[j].mesh = mesh
-		
-		mesh_pool[j].set_surface_override_material(0, MATERIAL)
-		add_child(mesh_pool[j])
+		for j in object.get_chunk_data_size():
+			# get chunk data
+			var pos = object.chunk_pos.slice(j*4,j*4+4)
+			var distance : int = Vector3(pos[0], pos[1], pos[2]).distance_to(world_offset)
+			#32813 = 32768 (flat data array) + 24 (position in object) + 1 (flags)
+			#var saved_chunk_size : int = object.data.size() / 32813
+			
+			if distance > RENDER_DISTANCE*32:
+				for instance in mesh_pool:
+					if instance.object_index == i:
+						
+				var mesh = Meshers.generate_lod_chunk_mesh_naive()
+				mesh.resource_name = j
+			else:
+				var chunk_data = generate_chunk_data(object.size, object.chunk_pos.slice(j*4,j*4+4), iv)
+				var mesh = Meshers.generate_chunk_mesh_simple_optimized(chunk_data)
+				mesh.resource_name = j
+			#print("mesh generation time: ", (Time.get_unix_time_from_system() - start_time) * 1000, "ms")
+			
+			
+			
+			mesh_pool[j].mesh = mesh
+			
+			mesh_pool[j].set_surface_override_material(0, MATERIAL)
+			add_child(mesh_pool[j])
+		i+=1
 
 #_pos: Vector3i, _seed : int
-static func generate_chunk_data(chunk_pos : Vector3i, iv : int) -> PackedByteArray:
+static func generate_chunk_data(object_size : Vector3i, chunk_pos : PackedInt32Array, iv : int) -> PackedByteArray:
 	var result : PackedByteArray
 	
-	seed(iv + chunk_pos.x + chunk_pos.y + chunk_pos.z)
+	seed(iv + chunk_pos[0]*object_size.x + chunk_pos[1]*object_size.x*object_size.y + chunk_pos[2]*object_size.x*object_size.y*object_size.z)
 	for i in range(32*32*32):
 		result.append(randi_range(0,1))
 	
